@@ -1,3 +1,4 @@
+from logging import exception
 from typing import Optional
 from fastapi import FastAPI, status, HTTPException
 from pydantic import BaseModel
@@ -9,7 +10,7 @@ from psycopg2.extras import RealDictCursor #Enable easier access columns
 class Customer(BaseModel):
     name: str
     age: int
-    occupation: str = "Wise man"   #Create default value
+    occupation: str = "Wizard"   #Create default value
     address: Optional[str]  #Create optional value
 
 #hardcoded data
@@ -38,24 +39,70 @@ app = FastAPI()
 
 #URL ordering matter! Get the more specific one on top of the more generic.
 
+#Get many
 @app.get("/customers")
 def get_customers():
-    return{"customer":my_customers}
+
+    #Query request
+    cursor.execute(""" SELECT * FROM customers """)
+    users = cursor.fetchall()
+    return {'users':users}
 
 
-#adding status code for specific path operation
-@app.post("/customer", status_code=status.HTTP_201_CREATED)
+#Create
+@app.post("/customer", status_code=status.HTTP_201_CREATED) #adding status code for specific path operation
 def create_customer(customer:Customer):
-    test_customer = customer.dict() #Convert to dict to allow assignment
-    test_customer["id"] = random.randrange(4, 1000)
-    my_customers.append(test_customer)
-    return {"customer":test_customer}
+
+    #Use returning to fetch the data
+    cursor.execute(""" insert into customers(name, age, occupation, address) values(%s,%s,%s,%s) returning *""",
+    (customer.name,customer.age, customer.occupation, customer.address))
+
+    new_customer = cursor.fetchone() #get the input for this insertion
+    conn.commit() #commit your change to the database
+
+    return {"customer":new_customer}
 
 
+#Get one
 @app.get("/customers/{id}")
 def get_customer(id:int):
-    for customer in my_customers:
-        if customer["id"] == id:
-            return{"customer":customer}
-    #Giving correct status code for unavailable item
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not available")
+    try:
+        cursor.execute(""" select * from customers where id = %s""", str(id) )
+    except:
+        #Giving correct status code for unavailable item
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not available")
+
+    customer = cursor.fetchone()
+    if customer:
+        return {"customer":customer}
+
+
+#Edit
+@app.put("/customers/{id}")
+def update_customer(id:int, customer:Customer):
+    try:
+        cursor.execute(""" select * from customers where id = %s""", str(id) )
+    except:
+        #Giving correct status code for unavailable item
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not available")
+
+    cursor.execute("""update customers set name=%s, age=%s, occupation=%s, address=%s where id=%s
+    returning *""", (customer.name,
+    customer.age, customer.occupation, customer.address, str(id)))
+
+    edited_customer = cursor.fetchone()
+    conn.commit()
+    return {"customer":edited_customer}
+
+
+#Delete
+@app.delete("/customers/{id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_customer(id:int):
+    try:
+        cursor.execute(""" select * from customers where id = %s""", str(id) )
+    except:
+        #Giving correct status code for unavailable item
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not available")
+
+    cursor.execute(""" delete from customers where id=%s """, str(id) )  
+    conn.commit()   
