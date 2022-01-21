@@ -1,4 +1,3 @@
-import imp
 from typing import Optional
 from fastapi import FastAPI, status, HTTPException
 from pydantic import BaseModel
